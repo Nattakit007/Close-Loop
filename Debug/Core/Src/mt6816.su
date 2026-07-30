@@ -1,0 +1,9 @@
+../Core/Src/mt6816.c:10:20:cs_low	16	static
+../Core/Src/mt6816.c:11:20:cs_high	16	static
+../Core/Src/mt6816.c:13:17:xfer16	32	static
+../Core/Src/mt6816.c:25:13:parity_ok	24	static
+../Core/Src/mt6816.c:35:6:MT6816_Init	24	static
+../Core/Src/mt6816.c:44:15:MT6816_ReadRaw	24	static
+../Core/Src/mt6816.c:57:15:MT6816_ReadDegrees	24	static
+../Core/Src/mt6816.c:65:15:MT6816_ReadRadians	24	static
+../Core/Src/mt6816.c:73:7:MT6816_GetAngle	24	static
