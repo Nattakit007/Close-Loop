@@ -44,9 +44,9 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-float angle;
-MT6816_t encoder;
-uint16_t holder;
+volatile float angle;
+volatile MT6816_t encoder;
+volatile uint16_t holder;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -102,10 +102,7 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-	  angle = MT6816_GetAngle(&encoder);
-	  MT6816_ReadRaw(&encoder, &holder);
-
-
+	  MT6816_ReadDegrees(&encoder, &angle);
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */

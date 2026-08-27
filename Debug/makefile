@@ -60,8 +60,8 @@ all: main-build
 main-build: SPI-ENCODER.elf secondary-outputs
 
 # Tool invocations
-SPI-ENCODER.elf SPI-ENCODER.map: $(OBJS) $(USER_OBJS) C:\Users\kitanat\Documents\SPI-ENCODER\STM32F411CEUX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "SPI-ENCODER.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\kitanat\Documents\SPI-ENCODER\STM32F411CEUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SPI-ENCODER.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+SPI-ENCODER.elf SPI-ENCODER.map: $(OBJS) $(USER_OBJS) /home/kitanat/Documents/STM32\ Projects/SPI-ENCODER/STM32F411CEUX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "SPI-ENCODER.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"/home/kitanat/Documents/STM32 Projects/SPI-ENCODER/STM32F411CEUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SPI-ENCODER.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
