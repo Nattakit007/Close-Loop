@@ -19,11 +19,17 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "spi.h"
+#include "tim.h"
+#include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "mt6816.h"
+#include "gpio.h"
+#include "PID.h"
+#include "tmc2209.h"
+#include "math.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -44,9 +50,12 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-volatile float angle;
+volatile float target_angle_deg = 360.0f;
+volatile float step_velocity = 0.0f;
 volatile MT6816_t encoder;
-volatile uint16_t holder;
+TMC2209_t motor_driver;
+PID_Controller_t motor_pid;
+volatile MT6816_Status encoder_status;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -90,9 +99,16 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_SPI1_Init();
+  MX_USART1_UART_Init();
+  MX_TIM1_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
   MT6816_Init(&encoder, &hspi1, GPIOA, GPIO_PIN_4);
+  TMC2209_Init(&motor_driver, &huart1, 0);
+  TMC2209_WriteRegister(&motor_driver, TMC2209_CHOPCONF, 0x14000043);
+  PID_Init(&motor_pid, 2.0f, 0.1f, 0.05f, -10000.0f, 10000.0f);
+  HAL_TIM_Base_Start_IT(&htim1);
 
 
   /* USER CODE END 2 */
@@ -102,8 +118,9 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-	  MT6816_ReadDegrees(&encoder, &angle);
+
     /* USER CODE BEGIN 3 */
+
   }
   /* USER CODE END 3 */
 }
@@ -155,7 +172,42 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance == TIM1) {
+        float raw_deg = 0.0f;
 
+        /* Capture the status globally so you can view it in Live Expressions */
+        encoder_status = MT6816_ReadDegrees(&encoder, &raw_deg);
+
+        /* Only execute control loop if the sensor read perfectly */
+        if (encoder_status == MT6816_OK) {
+
+            float current_pos = PID_UnwrapAngle(&motor_pid, raw_deg);
+
+            /* REMOVED 'float' to properly update the global variable */
+            step_velocity = PID_Update(&motor_pid, target_angle_deg, current_pos, 0.001f);
+
+            if (fabsf(step_velocity) < 10.0f) {
+            	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET);
+                HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+                return;
+            }
+
+            if (step_velocity > 0) HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
+            else HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
+
+            uint32_t arr_val = (uint32_t)(1000000.0f / fabsf(step_velocity)) - 1;
+            if (arr_val > 65535) arr_val = 65535;
+            if (arr_val < 2) arr_val = 2;
+
+            TIM2->ARR = arr_val;
+            TIM2->CCR1 = arr_val / 2;
+            HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_RESET);
+            HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+        }
+    }
+}
 /* USER CODE END 4 */
 
 /**

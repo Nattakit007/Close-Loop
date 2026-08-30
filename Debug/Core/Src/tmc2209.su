@@ -1,0 +1,5 @@
+../Core/Src/tmc2209.c:10:16:TMC2209_CalcCRC	24	static
+../Core/Src/tmc2209.c:23:6:TMC2209_Init	24	static
+../Core/Src/tmc2209.c:38:6:TMC2209_WriteRegister	32	static
+../Core/Src/tmc2209.c:53:6:TMC2209_SetCurrent	24	static
+../Core/Src/tmc2209.c:59:6:TMC2209_SetVelocity	16	static
