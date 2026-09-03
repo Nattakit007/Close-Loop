@@ -1,5 +1,5 @@
-../Core/Src/tmc2209.c:10:16:TMC2209_CalcCRC	4
-../Core/Src/tmc2209.c:23:6:TMC2209_Init	1
-../Core/Src/tmc2209.c:38:6:TMC2209_WriteRegister	1
-../Core/Src/tmc2209.c:53:6:TMC2209_SetCurrent	1
-../Core/Src/tmc2209.c:59:6:TMC2209_SetVelocity	1
+../Core/Src/tmc2209.c:9:16:TMC2209_CalcCRC	4
+../Core/Src/tmc2209.c:25:6:TMC2209_Init	1
+../Core/Src/tmc2209.c:48:6:TMC2209_WriteRegister	1
+../Core/Src/tmc2209.c:63:6:TMC2209_SetCurrent	1
+../Core/Src/tmc2209.c:71:6:TMC2209_SetVelocity	1

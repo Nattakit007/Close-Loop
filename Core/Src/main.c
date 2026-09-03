@@ -25,11 +25,14 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "mt6816.h"
-#include "gpio.h"
 #include "PID.h"
 #include "tmc2209.h"
-#include "math.h"
+#include "mt6816.h"
+#include <math.h>
+#include <stdbool.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -50,12 +53,36 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-volatile float target_angle_deg = 360.0f;
-volatile float step_velocity = 0.0f;
-volatile MT6816_t encoder;
-TMC2209_t motor_driver;
-PID_Controller_t motor_pid;
+typedef enum {
+    STATE_IDLE,
+    STATE_HOMING,
+    STATE_FEEDING,
+    STATE_CUTTING,
+    STATE_ERROR
+} SystemState_t;
+
+volatile SystemState_t current_state = STATE_IDLE;
+
+/* Job Tracking */
+volatile int job_qty = 0;
+volatile int current_piece = 0;
+volatile float job_length_mm = 0.0f;
+volatile float target_angle_deg = 0.0f;
+volatile float current_pos_deg = 0.0f;
+const float DEG_PER_MM = 3.6f; /* Calibrate: mm to shaft angle */
+
+/* Hardware Objects */
+TMC2209_t motor_1, motor_2, motor_3;
+MT6816_t encoder_1, encoder_2;
+PID_Controller_t pid_1, pid_2;
+volatile uint8_t active_motor_id = 1;
 volatile MT6816_Status encoder_status;
+
+/* ESP32 UART Buffer */
+uint8_t rx_byte;
+char rx_buffer[128];
+volatile uint8_t rx_index = 0;
+volatile bool msg_received = false;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -66,7 +93,60 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void Send_ESP32_Msg(const char *msg) {
+    HAL_UART_Transmit(&huart6, (uint8_t*)msg, strlen(msg), 100);
+}
 
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance == USART6) {
+        if (rx_byte == '\n' || rx_byte == '\r') {
+            if (rx_index > 0) {
+                rx_buffer[rx_index] = '\0';
+                msg_received = true;
+                rx_index = 0;
+            }
+        } else if (rx_index < sizeof(rx_buffer) - 1) {
+            rx_buffer[rx_index++] = rx_byte;
+        }
+        HAL_UART_Receive_IT(&huart6, &rx_byte, 1);
+    }
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance == USART6) {
+        __HAL_UART_CLEAR_OREFLAG(huart);
+        HAL_UART_Receive_IT(&huart6, &rx_byte, 1);
+    }
+}
+
+void Process_ESP32_Message(void) {
+    if (strstr(rx_buffer, "\"command\":\"abort\"")) {
+        current_state = STATE_IDLE;
+        HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+        Send_ESP32_Msg("{\"state\":\"IDLE\"}\n");
+    }
+    else if (strstr(rx_buffer, "\"quantity\":")) {
+        char *ptr_qty = strstr(rx_buffer, "\"quantity\":");
+        char *ptr_len = strstr(rx_buffer, "\"total_length\":");
+        if (ptr_qty) job_qty = atoi(ptr_qty + 11);
+        if (ptr_len) job_length_mm = atof(ptr_len + 15);
+        current_piece = 0;
+        current_state = STATE_HOMING;
+    }
+    msg_received = false;
+}
+
+void Select_Active_Motor(uint8_t motor_id) {
+    /* Disable all drivers by driving EN pins HIGH */
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET); // EN1 (PA2)
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET); // EN2 (PB0)
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET); // EN3 (PB1)
+
+    /* Enable target driver (Active LOW) */
+    if (motor_id == 1) HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_RESET);
+    if (motor_id == 2) HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
+    if (motor_id == 3) HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
+}
 /* USER CODE END 0 */
 
 /**
@@ -102,25 +182,127 @@ int main(void)
   MX_USART1_UART_Init();
   MX_TIM1_Init();
   MX_TIM2_Init();
+  MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
+  MT6816_Init(&encoder_1, &hspi1, GPIOA, GPIO_PIN_4); // CS1 (PA4)
+  MT6816_Init(&encoder_2, &hspi1, GPIOA, GPIO_PIN_3); // CS2 (PA3)
 
-  MT6816_Init(&encoder, &hspi1, GPIOA, GPIO_PIN_4);
-  TMC2209_Init(&motor_driver, &huart1, 0);
-  TMC2209_WriteRegister(&motor_driver, TMC2209_CHOPCONF, 0x14000043);
-  PID_Init(&motor_pid, 2.0f, 0.1f, 0.05f, -10000.0f, 10000.0f);
+  /* 2. Configure TMC2209 via Single-Wire UART */
+  TMC2209_Init(&motor_1, &huart1, 0);
+  TMC2209_Init(&motor_2, &huart1, 1);
+  TMC2209_WriteRegister(&motor_1, TMC2209_CHOPCONF, 0x14000043);
+  TMC2209_WriteRegister(&motor_2, TMC2209_CHOPCONF, 0x14000043);
+
+  /* 3. Initialize PID controllers */
+  PID_Init(&pid_1, 15.0f, 0.5f, 0.08f, -20000.0f, 20000.0f);
+  PID_Init(&pid_2, 15.0f, 0.5f, 0.08f, -20000.0f, 20000.0f);
+
+  /* 4. Start 1 kHz Control Loop Timer and UART RX */
   HAL_TIM_Base_Start_IT(&htim1);
-
-
+  HAL_UART_Receive_IT(&huart6, &rx_byte, 1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  if (msg_received) {
+	            Process_ESP32_Message();
+	        }
+
+	        switch (current_state) {
+	            case STATE_IDLE:
+	                break;
+
+	            case STATE_HOMING:
+	                Send_ESP32_Msg("{\"state\":\"HOMING\"}\n");
+	                active_motor_id = 1;
+	                Select_Active_Motor(1);
+
+	                /* Run open-loop towards the limit switch */
+	                HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
+	                TIM2->ARR = (1000000U / 2000) - 1U;
+	                TIM2->CCR1 = TIM2->ARR / 2;
+	                HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+
+	                /* Wait until limit switch on PA10 triggers (Active LOW) */
+	                while (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_10) == GPIO_PIN_SET) {
+	                    if (msg_received) {
+	                        Process_ESP32_Message();
+	                        break;
+	                    }
+	                }
+
+	                HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+
+	                /* Exit homing immediately if an abort occurred */
+	                if (current_state != STATE_HOMING) {
+	                    break;
+	                }
+
+	                HAL_Delay(200);
+
+	                /* Set new origin */
+	                float raw_deg = 0.0f;
+	                if (MT6816_ReadDegrees(&encoder_1, &raw_deg) == MT6816_OK) {
+	                    PID_Reset(&pid_1);
+	                    pid_1.last_raw_angle_deg = raw_deg;
+	                    pid_1.accumulated_angle_deg = 0.0f;
+	                    pid_1.is_initialized = true;
+	                }
+	                target_angle_deg = 0.0f;
+
+	                /* Send initial running state */
+	                Send_ESP32_Msg("{\"state\":\"RUNNING\",\"pg\":0}\n");
+	                current_state = STATE_FEEDING;
+	                break;
+
+	            case STATE_FEEDING:
+	                if (current_piece < job_qty) {
+	                    target_angle_deg += (job_length_mm * DEG_PER_MM);
+
+	                    uint32_t start_time = HAL_GetTick();
+	                    while (fabsf(target_angle_deg - current_pos_deg) > 0.2f) {
+	                        if (msg_received) {
+	                            Process_ESP32_Message();
+	                            break;
+	                        }
+	                        if (HAL_GetTick() - start_time > 5000) {
+	                            current_state = STATE_ERROR;
+	                            break;
+	                        }
+	                        HAL_Delay(5);
+	                    }
+
+	                    if (current_state == STATE_FEEDING) {
+	                        current_state = STATE_CUTTING;
+	                    }
+	                } else {
+	                    Send_ESP32_Msg("{\"done\":true}\n");
+	                    current_state = STATE_IDLE;
+	                }
+	                break;
+
+	            case STATE_CUTTING:
+	                HAL_Delay(300);
+
+	                current_piece++;
+	                char pg_msg[32];
+	                sprintf(pg_msg, "{\"pg\":%d}\n", current_piece);
+	                Send_ESP32_Msg(pg_msg);
+
+	                current_state = STATE_FEEDING;
+	                break;
+
+	            case STATE_ERROR:
+	                HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+	                Send_ESP32_Msg("{\"error\":\"wire jam at feeder\"}\n");
+	                current_state = STATE_IDLE;
+	                break;
+	        }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
   }
   /* USER CODE END 3 */
 }
@@ -175,37 +357,52 @@ void SystemClock_Config(void)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     if (htim->Instance == TIM1) {
-        float raw_deg = 0.0f;
-
-        /* Capture the status globally so you can view it in Live Expressions */
-        encoder_status = MT6816_ReadDegrees(&encoder, &raw_deg);
-
-        /* Only execute control loop if the sensor read perfectly */
-        if (encoder_status == MT6816_OK) {
-
-            float current_pos = PID_UnwrapAngle(&motor_pid, raw_deg);
-
-            /* REMOVED 'float' to properly update the global variable */
-            step_velocity = PID_Update(&motor_pid, target_angle_deg, current_pos, 0.001f);
-
-            if (fabsf(step_velocity) < 10.0f) {
-            	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET);
-                HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
-                return;
-            }
-
-            if (step_velocity > 0) HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
-            else HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
-
-            uint32_t arr_val = (uint32_t)(1000000.0f / fabsf(step_velocity)) - 1;
-            if (arr_val > 65535) arr_val = 65535;
-            if (arr_val < 2) arr_val = 2;
-
-            TIM2->ARR = arr_val;
-            TIM2->CCR1 = arr_val / 2;
-            HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_RESET);
-            HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+        /* Suspend PID control during Homing and Idle states */
+        if (current_state != STATE_FEEDING && current_state != STATE_CUTTING) {
+            return;
         }
+
+        float raw_deg = 0.0f;
+        float step_velocity = 0.0f;
+
+        if (active_motor_id == 1) {
+            encoder_status = MT6816_ReadDegrees(&encoder_1, &raw_deg);
+            if (encoder_status == MT6816_OK) {
+                current_pos_deg = PID_UnwrapAngle(&pid_1, raw_deg);
+                step_velocity = PID_Update(&pid_1, target_angle_deg, current_pos_deg, 0.001f);
+            }
+        } else if (active_motor_id == 2) {
+            encoder_status = MT6816_ReadDegrees(&encoder_2, &raw_deg);
+            if (encoder_status == MT6816_OK) {
+                current_pos_deg = PID_UnwrapAngle(&pid_2, raw_deg);
+                step_velocity = PID_Update(&pid_2, target_angle_deg, current_pos_deg, 0.001f);
+            }
+        }
+
+        /* Deadband stop */
+        if (fabsf(step_velocity) < 10.0f || encoder_status != MT6816_OK) {
+            HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+            return;
+        }
+
+        /* Direction logic: RESET = forward positive feedback correction */
+        if (step_velocity > 0) {
+            HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
+        } else {
+            HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
+        }
+
+        /* Map velocity to ARR frequency */
+        uint32_t step_freq = (uint32_t)fabsf(step_velocity);
+        if (step_freq > 7500) step_freq = 7500;
+
+        uint32_t arr_val = (1000000U / step_freq) - 1U;
+        if (arr_val > 65535) arr_val = 65535;
+        if (arr_val < 2) arr_val = 2;
+
+        TIM2->ARR = arr_val;
+        TIM2->CCR1 = arr_val / 2;
+        HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
     }
 }
 /* USER CODE END 4 */

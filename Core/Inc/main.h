@@ -57,6 +57,28 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define DIR_Pin GPIO_PIN_1
+#define DIR_GPIO_Port GPIOA
+#define EN1_Pin GPIO_PIN_2
+#define EN1_GPIO_Port GPIOA
+#define CS2_Pin GPIO_PIN_3
+#define CS2_GPIO_Port GPIOA
+#define CS1_Pin GPIO_PIN_4
+#define CS1_GPIO_Port GPIOA
+#define EN2_Pin GPIO_PIN_0
+#define EN2_GPIO_Port GPIOB
+#define EN3_Pin GPIO_PIN_1
+#define EN3_GPIO_Port GPIOB
+#define CS3_Pin GPIO_PIN_2
+#define CS3_GPIO_Port GPIOB
+#define TMC2209_1LineProtocol_Pin GPIO_PIN_9
+#define TMC2209_1LineProtocol_GPIO_Port GPIOA
+#define Limit_Switch_Pin GPIO_PIN_10
+#define Limit_Switch_GPIO_Port GPIOA
+#define STMTX_TO_ESP32_Pin GPIO_PIN_11
+#define STMTX_TO_ESP32_GPIO_Port GPIOA
+#define STMRX_TO_ESP32_Pin GPIO_PIN_12
+#define STMRX_TO_ESP32_GPIO_Port GPIOA
 
 /* USER CODE BEGIN Private defines */
 

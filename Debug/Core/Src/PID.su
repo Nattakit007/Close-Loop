@@ -1,3 +1,4 @@
 ../Core/Src/PID.c:10:6:PID_Init	32	static
-../Core/Src/PID.c:20:7:PID_UnwrapAngle	24	static
-../Core/Src/PID.c:36:7:PID_Update	48	static
+../Core/Src/PID.c:24:6:PID_Reset	16	static
+../Core/Src/PID.c:35:7:PID_UnwrapAngle	24	static
+../Core/Src/PID.c:59:7:PID_Update	48	static
