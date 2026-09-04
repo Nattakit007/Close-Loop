@@ -39,7 +39,7 @@ void TMC2209_Init(TMC2209_t *driver, UART_HandleTypeDef *huart, uint8_t node_add
     TMC2209_WriteRegister(driver, TMC2209_CHOPCONF, 0x14000043);
 
     /* 3. Set current scaling via UART: IRUN=16 (approx. 53%), IHOLD=8 (approx. 28%) */
-    TMC2209_SetCurrent(driver, 24, 8);
+    TMC2209_SetCurrent(driver, 31, 8);
 
     /* 4. Standstill power-down delay (~20 * 2^18 clocks) */
     TMC2209_WriteRegister(driver, TMC2209_TPOWERDOWN, 0x00000014);
@@ -71,3 +71,19 @@ void TMC2209_SetCurrent(TMC2209_t *driver, uint8_t run_current_scale, uint8_t ho
 void TMC2209_SetVelocity(TMC2209_t *driver, int32_t velocity) {
     TMC2209_WriteRegister(driver, TMC2209_VACTUAL, (uint32_t)velocity);
 }
+
+void TMC2209_MaxTorque(TMC2209_t *driver)
+{
+    /* UART control + register microsteps + forced SpreadCycle */
+    TMC2209_WriteRegister(driver, TMC2209_GCONF, 0x000000C4);
+
+    /*
+     * Existing CHOPCONF:
+     * 1/16 microstepping, interpolation enabled, VSENSE = 0.
+     */
+    TMC2209_WriteRegister(driver, TMC2209_CHOPCONF, 0x14000043);
+
+    /* Maximum current scale */
+    TMC2209_SetCurrent(driver, 31, 31);
+}
+

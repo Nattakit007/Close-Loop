@@ -42,7 +42,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define WITHESP 0u
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -83,6 +83,9 @@ uint8_t rx_byte;
 char rx_buffer[128];
 volatile uint8_t rx_index = 0;
 volatile bool msg_received = false;
+
+//button
+volatile bool buttonstate;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -200,12 +203,17 @@ int main(void)
   /* 4. Start 1 kHz Control Loop Timer and UART RX */
   HAL_TIM_Base_Start_IT(&htim1);
   HAL_UART_Receive_IT(&huart6, &rx_byte, 1);
+
+
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+#if WITHESP
 	  if (msg_received) {
 	            Process_ESP32_Message();
 	        }
@@ -226,7 +234,7 @@ int main(void)
 	                HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 
 	                /* Wait until limit switch on PA10 triggers (Active LOW) */
-	                while (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_10) == GPIO_PIN_SET) {
+	                while (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_10) == GPIO_PIN_RESET) {
 	                    if (msg_received) {
 	                        Process_ESP32_Message();
 	                        break;
@@ -300,10 +308,36 @@ int main(void)
 	                current_state = STATE_IDLE;
 	                break;
 	        }
+#endif
+
+
+	        			HAL_GPIO_WritePin(DIR_GPIO_Port, DIR_Pin, 1),
+	        buttonstate = HAL_GPIO_ReadPin(Limit_Switch_GPIO_Port, Limit_Switch_Pin);
+	        	        Select_Active_Motor(1);
+	        	        /* TIM2 clock after prescaler is 1 MHz */
+	        	        uint32_t arr_val = (1000000U / 2000) - 1U;
+
+	        	        __HAL_TIM_SET_AUTORELOAD(&htim2, arr_val);
+	        	        __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (arr_val + 1U) / 2U);
+
+	        	        HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+	        	        HAL_Delay(5000);
+	        	        HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+	        	        Select_Active_Motor(2);
+	        	        HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+	        	        HAL_Delay(5000);
+	        	        HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+
+
+
+
+
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
+
   /* USER CODE END 3 */
 }
 
@@ -354,11 +388,13 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+#if WITHESP
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     if (htim->Instance == TIM1) {
         /* Suspend PID control during Homing and Idle states */
-        if (current_state != STATE_FEEDING && current_state != STATE_CUTTING) {
+
+    	if (current_state != STATE_FEEDING && current_state != STATE_CUTTING) {
             return;
         }
 
@@ -397,14 +433,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         if (step_freq > 7500) step_freq = 7500;
 
         uint32_t arr_val = (1000000U / step_freq) - 1U;
-        if (arr_val > 65535) arr_val = 65535;
-        if (arr_val < 2) arr_val = 2;
 
-        TIM2->ARR = arr_val;
-        TIM2->CCR1 = arr_val / 2;
+        __HAL_TIM_SET_AUTORELOAD(&htim2, arr_val);
+        __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (arr_val + 1U) / 2U);
+
         HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
     }
 }
+#endif
 /* USER CODE END 4 */
 
 /**

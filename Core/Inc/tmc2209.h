@@ -27,5 +27,6 @@ void TMC2209_Init(TMC2209_t *driver, UART_HandleTypeDef *huart, uint8_t node_add
 void TMC2209_WriteRegister(TMC2209_t *driver, uint8_t reg, uint32_t value);
 void TMC2209_SetCurrent(TMC2209_t *driver, uint8_t run_current_scale, uint8_t hold_current_scale);
 void TMC2209_SetVelocity(TMC2209_t *driver, int32_t velocity);
+void TMC2209_MaxTorque(TMC2209_t *driver);
 
 #endif

@@ -3,3 +3,4 @@
 ../Core/Src/tmc2209.c:48:6:TMC2209_WriteRegister	1
 ../Core/Src/tmc2209.c:63:6:TMC2209_SetCurrent	1
 ../Core/Src/tmc2209.c:71:6:TMC2209_SetVelocity	1
+../Core/Src/tmc2209.c:75:6:TMC2209_MaxTorque	1

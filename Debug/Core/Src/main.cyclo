@@ -1,9 +1,8 @@
-../Core/Src/main.c:96:6:Send_ESP32_Msg	1
-../Core/Src/main.c:100:6:HAL_UART_RxCpltCallback	6
-../Core/Src/main.c:115:6:HAL_UART_ErrorCallback	2
-../Core/Src/main.c:122:6:Process_ESP32_Message	5
-../Core/Src/main.c:139:6:Select_Active_Motor	4
-../Core/Src/main.c:156:5:main	15
-../Core/Src/main.c:314:6:SystemClock_Config	3
-../Core/Src/main.c:357:6:HAL_TIM_PeriodElapsedCallback	14
-../Core/Src/main.c:414:6:Error_Handler	1
+../Core/Src/main.c:99:6:Send_ESP32_Msg	1
+../Core/Src/main.c:103:6:HAL_UART_RxCpltCallback	6
+../Core/Src/main.c:118:6:HAL_UART_ErrorCallback	2
+../Core/Src/main.c:125:6:Process_ESP32_Message	5
+../Core/Src/main.c:142:6:Select_Active_Motor	4
+../Core/Src/main.c:159:5:main	1
+../Core/Src/main.c:348:6:SystemClock_Config	3
+../Core/Src/main.c:450:6:Error_Handler	1
