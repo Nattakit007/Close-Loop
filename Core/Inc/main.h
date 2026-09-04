@@ -73,8 +73,12 @@ void Error_Handler(void);
 #define CS3_GPIO_Port GPIOB
 #define TMC2209_1LineProtocol_Pin GPIO_PIN_9
 #define TMC2209_1LineProtocol_GPIO_Port GPIOA
+/* PA10 is the blade's top home switch. The feed rollers have no home position
+ * of their own - they only ever turn, so there is nothing to reference. */
 #define Limit_Switch_Pin GPIO_PIN_10
 #define Limit_Switch_GPIO_Port GPIOA
+#define Blade_Limit_Pin Limit_Switch_Pin
+#define Blade_Limit_GPIO_Port Limit_Switch_GPIO_Port
 #define STMTX_TO_ESP32_Pin GPIO_PIN_11
 #define STMTX_TO_ESP32_GPIO_Port GPIOA
 #define STMRX_TO_ESP32_Pin GPIO_PIN_12
