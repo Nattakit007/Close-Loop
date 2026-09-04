@@ -104,7 +104,6 @@ typedef enum {
 typedef enum {
     STATE_IDLE,
     STATE_HOMING_BLADE,  /* Blade retracts to its top stop and defines zero */
-    STATE_HOMING,        /* Feeder rollers seek the wire-entry limit switch */
     STATE_FEEDING,       /* Closed-loop wire advance */
     STATE_STRIP_HEAD,    /* Score the insulation near the leading end */
     STATE_STRIP_TAIL,    /* Score the insulation at the trailing end */
@@ -157,7 +156,6 @@ void Select_Drive_Target(DriveTarget_t target);
 static bool Wait_For_Move(volatile float *target_deg, volatile float *pos_deg);
 static bool Blade_MoveTo(float depth_deg);
 static bool Home_Blade(void);
-static bool Home_Rollers(void);
 static bool Feed_Wire_mm(float distance_mm);
 static bool Blade_Stroke(float depth_deg);
 static void Report_State(const char *name);
@@ -305,7 +303,21 @@ int main(void)
   pid_roller.deadband = PID_DEADBAND_DEG;
   pid_blade.deadband  = PID_DEADBAND_DEG;
 
-  /* 4. Start 1 kHz Control Loop Timer and UART RX */
+  /* 4. The rollers only ever turn - there is no home position to seek - so
+   * wherever the shaft sits at power-on becomes zero and every feed is
+   * measured relative to it. Seeding the tracker here means the very first
+   * feed starts from a known reference instead of a stale one. */
+  {
+      float raw_deg = 0.0f;
+      if (MT6816_ReadDegrees(&encoder_roller, &raw_deg) == MT6816_OK) {
+          pid_roller.last_raw_angle_deg    = raw_deg;
+          pid_roller.accumulated_angle_deg = 0.0f;
+          pid_roller.is_initialized        = true;
+          pid_roller.prev_feedback         = 0.0f;
+      }
+  }
+
+  /* 5. Start 1 kHz Control Loop Timer and UART RX */
   HAL_TIM_Base_Start_IT(&htim1);
   HAL_UART_Receive_IT(&huart6, &rx_byte, 1);
   /* USER CODE END 2 */
@@ -326,12 +338,6 @@ int main(void)
 	             * before any wire is pushed through. */
 	            case STATE_HOMING_BLADE:
 	                if (Home_Blade()) {
-	                    current_state = STATE_HOMING;
-	                }
-	                break;
-
-	            case STATE_HOMING:
-	                if (Home_Rollers()) {
 	                    Send_ESP32_Msg("{\"state\":\"RUNNING\",\"pg\":0}\n");
 	                    current_state = STATE_FEEDING;
 	                }
@@ -587,9 +593,12 @@ static bool Blade_MoveTo(float depth_deg)
     return Wait_For_Move(&blade_target_deg, &blade_pos_deg);
 }
 
-/* Retracts the blade open-loop until it presses its top limit switch, then
- * declares that point to be zero. Homing must run open-loop because the
- * absolute position is unknown until the switch is found. */
+/* Retracts the blade open-loop until it presses its top limit switch (PA10),
+ * then declares that point to be zero. Homing must run open-loop because the
+ * absolute position is unknown until the switch is found.
+ *
+ * This is the only homing the machine does: the feed rollers have no reference
+ * position, they simply turn, and their count is relative to power-on. */
 static bool Home_Blade(void)
 {
     Report_State("HOMING_BLADE");
@@ -631,48 +640,6 @@ static bool Home_Blade(void)
 
     blade_pos_deg    = 0.0f;
     blade_target_deg = 0.0f;
-    encoder_error_count = 0;
-    return true;
-}
-
-/* Same idea for the feed rollers, seeking the wire-entry limit switch. */
-static bool Home_Rollers(void)
-{
-    Report_State("HOMING");
-    Select_Drive_Target(DRIVE_ROLLERS);
-
-    HAL_GPIO_WritePin(DIR_GPIO_Port, DIR_Pin, GPIO_PIN_RESET);
-    Step_SetFrequency(STEP_FREQ_HOMING);
-
-    uint32_t start_time = HAL_GetTick();
-    while (HAL_GPIO_ReadPin(Limit_Switch_GPIO_Port, Limit_Switch_Pin) == GPIO_PIN_SET) {
-        if (msg_received) {
-            Process_ESP32_Message();
-            if (current_state == STATE_IDLE) { Step_Stop(); return false; }
-        }
-        if (HAL_GetTick() - start_time > HOMING_TIMEOUT_MS) {
-            Step_Stop();
-            current_state = STATE_ERROR;
-            return false;
-        }
-    }
-    Step_Stop();
-    HAL_Delay(200);
-
-    float raw_deg = 0.0f;
-    if (MT6816_ReadDegrees(&encoder_roller, &raw_deg) != MT6816_OK) {
-        current_state = STATE_ERROR;
-        return false;
-    }
-
-    PID_Reset(&pid_roller);
-    pid_roller.last_raw_angle_deg    = raw_deg;
-    pid_roller.accumulated_angle_deg = 0.0f;
-    pid_roller.is_initialized        = true;
-    pid_roller.prev_feedback         = 0.0f;
-
-    current_pos_deg  = 0.0f;
-    target_angle_deg = 0.0f;
     encoder_error_count = 0;
     return true;
 }

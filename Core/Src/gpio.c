@@ -83,19 +83,14 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(CS3_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : Limit_Switch_Pin */
+  /*Configure GPIO pin : Limit_Switch_Pin (blade top home switch) */
+  /* Pulled up internally so an open switch reads HIGH and a switch wired to
+   * GND reads LOW when pressed. Leaving this floating would let the input
+   * pick up noise, and the blade could stop mid-travel or never stop. */
   GPIO_InitStruct.Pin = Limit_Switch_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(Limit_Switch_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : Blade_Limit_Pin */
-  /* Pulled up internally so an open switch reads HIGH; wiring the switch to
-   * GND makes it active LOW, matching the feeder limit switch behaviour. */
-  GPIO_InitStruct.Pin = Blade_Limit_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(Blade_Limit_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(Limit_Switch_GPIO_Port, &GPIO_InitStruct);
 
 }
 
