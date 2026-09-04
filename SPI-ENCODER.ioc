@@ -64,7 +64,11 @@ PA1.Locked=true
 PA1.PinState=GPIO_PIN_SET
 PA1.Signal=GPIO_Output
 PA10.GPIOParameters=GPIO_PuPd,GPIO_Label
+<<<<<<< HEAD
 PA10.GPIO_Label=Limit Switch
+=======
+PA10.GPIO_Label=Blade Limit Switch
+>>>>>>> cb64468c157c2692403ceb5eeb9bd4f485d256ad
 PA10.GPIO_PuPd=GPIO_PULLUP
 PA10.Locked=true
 PA10.Signal=GPIO_Input
@@ -214,7 +218,7 @@ TIM1.AutoReloadPreload=TIM_AUTORELOAD_PRELOAD_ENABLE
 TIM1.IPParameters=Prescaler,Period,AutoReloadPreload
 TIM1.Period=999
 TIM1.Prescaler=99
-TIM2.AutoReloadPreload=TIM_AUTORELOAD_PRELOAD_DISABLE
+TIM2.AutoReloadPreload=TIM_AUTORELOAD_PRELOAD_ENABLE
 TIM2.Channel-PWM\ Generation1\ CH1=TIM_CHANNEL_1
 TIM2.IPParameters=Channel-PWM Generation1 CH1,Prescaler,AutoReloadPreload,Period
 TIM2.Period=65535

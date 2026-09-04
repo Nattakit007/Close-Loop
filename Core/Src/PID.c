@@ -26,9 +26,22 @@ void PID_Reset(PID_Controller_t *pid)
     pid->prev_error = 0.0f;
     pid->integral = 0.0f;
     pid->d_filtered = 0.0f;
+    pid->prev_feedback = 0.0f;
+    pid->d_initialized = false;
     pid->last_raw_angle_deg = 0.0f;
     pid->accumulated_angle_deg = 0.0f;
     pid->is_initialized = false;
+}
+
+/* Clears only the dynamic terms when a new target is issued.
+ * Keeps the multi-turn tracking intact so the accumulated angle stays valid. */
+void PID_SetTarget(PID_Controller_t *pid, float new_target)
+{
+    (void)new_target;
+    pid->integral = 0.0f;
+    pid->prev_error = 0.0f;
+    pid->d_filtered = 0.0f;
+    pid->d_initialized = false;
 }
 
 /* Unwraps 0..360 degree jumps to track multi-turn continuous positions[cite: 5] */
@@ -62,31 +75,57 @@ float PID_Update(PID_Controller_t *pid, float setpoint, float feedback, float dt
 
     float error = setpoint - feedback;
 
-    /* Apply deadband to prevent motor jitter at standstill[cite: 5] */
+    /* Inside the deadband the axis is considered parked: zero the error AND
+     * bleed the integrator off. Leaving the integrator charged here makes it
+     * climb on a standing sub-deadband error until the output crosses the step
+     * generator's minimum frequency, which shows up as slow creep at rest. */
     if (fabsf(error) < pid->deadband) {
         error = 0.0f;
+        pid->integral = 0.0f;
     }
 
     /* Proportional term[cite: 5] */
     float p_out = pid->Kp * error;
 
-    /* Integral term with anti-windup clamp[cite: 5] */
-    pid->integral += error * dt;
-    if (pid->integral > pid->integral_limit)  pid->integral = pid->integral_limit;
-    if (pid->integral < -pid->integral_limit) pid->integral = -pid->integral_limit;
-    float i_out = pid->Ki * pid->integral;
+    /* Derivative on measurement: differentiating the feedback instead of the
+     * error removes the spike that a setpoint step (or the deadband snapping
+     * the error to zero) would otherwise inject into the D term. */
+    float derivative = 0.0f;
+    if (pid->d_initialized) {
+        derivative = -(feedback - pid->prev_feedback) / dt;
+    } else {
+        pid->d_initialized = true;
+    }
+    pid->prev_feedback = feedback;
 
-    /* Derivative term with low-pass filter[cite: 5] */
-    float derivative = (error - pid->prev_error) / dt;
     pid->d_filtered = (pid->d_filter_alpha * derivative) + ((1.0f - pid->d_filter_alpha) * pid->d_filtered);
     float d_out = pid->Kd * pid->d_filtered;
+
+    /* Integral term, clamped so Ki * integral cannot exceed integral_limit */
+    pid->integral += error * dt;
+    float i_out = pid->Ki * pid->integral;
+    if (i_out > pid->integral_limit) {
+        i_out = pid->integral_limit;
+        if (pid->Ki != 0.0f) pid->integral = i_out / pid->Ki;
+    } else if (i_out < -pid->integral_limit) {
+        i_out = -pid->integral_limit;
+        if (pid->Ki != 0.0f) pid->integral = i_out / pid->Ki;
+    }
 
     pid->prev_error = error;
 
     /* Total output limited to actuator limits[cite: 5] */
     float output = p_out + i_out + d_out;
-    if (output > pid->out_max) output = pid->out_max;
-    if (output < pid->out_min) output = pid->out_min;
+
+    /* Anti-windup by back-calculation: when the output saturates, roll the
+     * integrator back by the excess so it does not keep charging. */
+    if (output > pid->out_max) {
+        if (pid->Ki != 0.0f) pid->integral -= (output - pid->out_max) / pid->Ki;
+        output = pid->out_max;
+    } else if (output < pid->out_min) {
+        if (pid->Ki != 0.0f) pid->integral -= (output - pid->out_min) / pid->Ki;
+        output = pid->out_min;
+    }
 
     return output;
 }
