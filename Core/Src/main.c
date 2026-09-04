@@ -145,6 +145,12 @@ MT6816_t encoder_roller, encoder_blade;
 PID_Controller_t pid_roller, pid_blade;
 
 volatile DriveTarget_t active_target = DRIVE_NONE;
+
+/* Set while a routine drives the step generator directly (homing). The 1 kHz
+ * loop stands down for the duration: it would otherwise fight for the DIR pin
+ * and the timer registers, and during homing its position reference is not
+ * even valid yet. */
+volatile bool open_loop_active = false;
 volatile MT6816_Status encoder_status = MT6816_OK;
 volatile bool step_pwm_running = false;
 volatile uint32_t encoder_error_count = 0;
@@ -473,14 +479,30 @@ static void Step_SetFrequency(uint32_t step_freq)
     if (arr_val > 65535U) arr_val = 65535U;
     if (arr_val < 2U)     arr_val = 2U;
 
+    /* ARR and CCR1 are both preloaded (ARPE is enabled in MX_TIM2_Init, and
+     * HAL_TIM_PWM_ConfigChannel sets OC1PE), so these two writes land in
+     * shadow registers and take effect together at the next update event.
+     *
+     * That pairing is the point. With ARR unbuffered and CCR1 buffered - the
+     * CubeMX default - the two would apply one cycle apart: shrinking ARR
+     * takes effect immediately while the old, now-larger CCR1 stays live for
+     * one more period, so the compare never fires and the output sits HIGH
+     * for a whole cycle. The driver sees no rising edge and silently drops
+     * that step. Letting the hardware swap both at once also means the pulse
+     * currently in flight finishes intact, so no step is ever truncated.
+     *
+     * The cost is that a change waits out the current period - at the speeds
+     * the machine actually runs (>= 500 Hz) that is under 2 ms, well inside
+     * the control loop's tolerance. */
     TIM2->ARR  = arr_val;
     TIM2->CCR1 = arr_val / 2U;   /* 50 % duty */
 
-    /* Force the new period to take effect on the next cycle rather than
-     * waiting out the previously loaded (possibly very long) one. */
-    if (TIM2->CNT > arr_val) TIM2->CNT = 0;
-
     if (!step_pwm_running) {
+        /* Nothing is running, so there is no in-flight pulse to protect and
+         * no update event coming to load the shadow registers. Generate one
+         * by hand so the first pulse uses this frequency instead of whatever
+         * the previous move left in the active registers. */
+        TIM2->EGR = TIM_EGR_UG;
         HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
         step_pwm_running = true;
     }
@@ -505,6 +527,9 @@ static void Step_Stop(void)
  * simply holds position. */
 void Control_Loop_1kHz(void)
 {
+    /* An open-loop routine owns the step generator right now. */
+    if (open_loop_active) return;
+
     MT6816_t         *encoder;
     PID_Controller_t *pid;
     volatile float   *pos_out;
@@ -623,6 +648,10 @@ static bool Home_Blade(void)
     Report_State("HOMING_BLADE");
     Select_Drive_Target(DRIVE_BLADE);
 
+    /* Take the step generator before the first write: the blade's zero is not
+     * established yet, so the closed loop has nothing meaningful to track. */
+    open_loop_active = true;
+
     /* Retracting is the opposite of the blade's downward direction. */
     HAL_GPIO_WritePin(DIR_GPIO_Port, DIR_Pin, DIR_OPPOSITE(DIR_BLADE_DOWN));
     Step_SetFrequency(STEP_FREQ_HOMING);
@@ -631,12 +660,17 @@ static bool Home_Blade(void)
     while (HAL_GPIO_ReadPin(Blade_Limit_GPIO_Port, Blade_Limit_Pin) == GPIO_PIN_SET) {
         if (msg_received) {
             Process_ESP32_Message();
-            if (current_state == STATE_IDLE) { Step_Stop(); return false; }
+            if (current_state == STATE_IDLE) {
+                Step_Stop();
+                open_loop_active = false;
+                return false;
+            }
         }
         /* A switch that never closes would otherwise drive the blade into its
          * end stop forever. */
         if (HAL_GetTick() - start_time > HOMING_TIMEOUT_MS) {
             Step_Stop();
+            open_loop_active = false;
             current_state = STATE_ERROR;
             return false;
         }
@@ -646,6 +680,7 @@ static bool Home_Blade(void)
 
     float raw_deg = 0.0f;
     if (MT6816_ReadDegrees(&encoder_blade, &raw_deg) != MT6816_OK) {
+        open_loop_active = false;
         current_state = STATE_ERROR;
         return false;
     }
@@ -660,6 +695,10 @@ static bool Home_Blade(void)
     blade_pos_deg    = 0.0f;
     blade_target_deg = 0.0f;
     encoder_error_count = 0;
+
+    /* Origin is established and the target matches the current position, so
+     * the closed loop can take over without commanding a jump. */
+    open_loop_active = false;
     return true;
 }
 
