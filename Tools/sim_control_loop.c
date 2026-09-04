@@ -9,7 +9,7 @@
 #define CONTROL_LOOP_DT   0.001f
 #define STEP_FREQ_MAX     7500U
 #define STEP_FREQ_MIN     10U
-#define DEG_PER_MM        3.6f
+#define DEG_PER_MM        3.8197f
 #define POS_TOLERANCE_DEG 0.75f
 #define PID_DEADBAND_DEG  0.70f
 #define STEP_TIMER_HZ     1000000U

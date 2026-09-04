@@ -84,12 +84,11 @@
 /* Wire pull-back after the head strip, so the jaws grip fresh insulation. */
 #define STRIP_PULL_MM       8.0f
 
-/* DIR polarity for a positive (increasing-position) move. The two axes are
- * wired with opposite senses, and they share one DIR line, so the direction
- * must be chosen per axis rather than assumed.
- *   Rollers: LOW  feeds the wire forward.
+/* DIR polarity for a positive (increasing-position) move. Both axes share one
+ * DIR line, so each names its own sense rather than assuming a common one.
+ *   Rollers: HIGH turns counter-clockwise, pulling the wire in.
  *   Blade:   HIGH drives the blade down (positive = deeper). */
-#define DIR_ROLLER_FORWARD  GPIO_PIN_RESET
+#define DIR_ROLLER_FORWARD  GPIO_PIN_SET
 #define DIR_BLADE_DOWN      GPIO_PIN_SET
 #define DIR_OPPOSITE(d)     (((d) == GPIO_PIN_SET) ? GPIO_PIN_RESET : GPIO_PIN_SET)
 
@@ -128,7 +127,13 @@ volatile int current_piece = 0;
 volatile float job_length_mm = 0.0f;
 volatile float target_angle_deg = 0.0f;
 volatile float current_pos_deg = 0.0f;
-const float DEG_PER_MM = 3.6f; /* Calibrate: mm to shaft angle */
+/* Shaft rotation per millimetre of wire, from the roller's circumference:
+ *   360 / (pi * 30 mm) = 3.8197 deg/mm
+ * With a NEMA 17 (1.8 deg/step) at 1/16 microstepping the feed resolves to
+ * 0.029 mm per microstep, and the MT6816 reads back 0.006 mm per count, so
+ * the encoder is finer than the step the motor can take.
+ * Re-measure this if the rollers are ever changed - see TUNING.md. */
+const float DEG_PER_MM = 3.8197f;
 
 /* Hardware Objects
  * motor_1 / motor_2 are the front and rear feed rollers. They share the STEP
