@@ -13,7 +13,7 @@
 </p>
 
 ---
-
+NIGGA
 ### Overview
 
 This project implements a real-time closed-loop control system on an STM32 microcontroller. The primary goal is exploring the practical bridge between digital algorithms and physical hardware behavior, analyzing how discrete controllers respond to continuous physical plants.
