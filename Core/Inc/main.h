@@ -75,6 +75,10 @@ void Error_Handler(void);
 #define TMC2209_1LineProtocol_GPIO_Port GPIOA
 #define Limit_Switch_Pin GPIO_PIN_10
 #define Limit_Switch_GPIO_Port GPIOA
+/* Blade home switch: wire the switch between PB4 and GND (internal pull-up,
+ * so it reads HIGH when open and LOW when the blade reaches the top stop). */
+#define Blade_Limit_Pin GPIO_PIN_4
+#define Blade_Limit_GPIO_Port GPIOB
 #define STMTX_TO_ESP32_Pin GPIO_PIN_11
 #define STMTX_TO_ESP32_GPIO_Port GPIOA
 #define STMRX_TO_ESP32_Pin GPIO_PIN_12
