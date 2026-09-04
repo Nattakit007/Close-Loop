@@ -84,6 +84,15 @@
 /* Wire pull-back after the head strip, so the jaws grip fresh insulation. */
 #define STRIP_PULL_MM       8.0f
 
+/* DIR polarity for a positive (increasing-position) move. The two axes are
+ * wired with opposite senses, and they share one DIR line, so the direction
+ * must be chosen per axis rather than assumed.
+ *   Rollers: LOW  feeds the wire forward.
+ *   Blade:   HIGH drives the blade down (positive = deeper). */
+#define DIR_ROLLER_FORWARD  GPIO_PIN_RESET
+#define DIR_BLADE_DOWN      GPIO_PIN_SET
+#define DIR_OPPOSITE(d)     (((d) == GPIO_PIN_SET) ? GPIO_PIN_RESET : GPIO_PIN_SET)
+
 /* Motor selection: the rollers share one STEP/DIR pair and are enabled
  * together, while the blade is driven alone on the same pair. */
 typedef enum {
@@ -495,20 +504,23 @@ void Control_Loop_1kHz(void)
     PID_Controller_t *pid;
     volatile float   *pos_out;
     float             setpoint;
+    GPIO_PinState     dir_positive;
 
     switch (active_target) {
         case DRIVE_ROLLERS:
-            encoder  = &encoder_roller;
-            pid      = &pid_roller;
-            pos_out  = &current_pos_deg;
-            setpoint = target_angle_deg;
+            encoder      = &encoder_roller;
+            pid          = &pid_roller;
+            pos_out      = &current_pos_deg;
+            setpoint     = target_angle_deg;
+            dir_positive = DIR_ROLLER_FORWARD;
             break;
 
         case DRIVE_BLADE:
-            encoder  = &encoder_blade;
-            pid      = &pid_blade;
-            pos_out  = &blade_pos_deg;
-            setpoint = blade_target_deg;
+            encoder      = &encoder_blade;
+            pid          = &pid_blade;
+            pos_out      = &blade_pos_deg;
+            setpoint     = blade_target_deg;
+            dir_positive = DIR_BLADE_DOWN;
             break;
 
         default:
@@ -540,9 +552,11 @@ void Control_Loop_1kHz(void)
         return;
     }
 
-    /* Direction logic: RESET = forward positive feedback correction */
+    /* A positive output means "increase position", which is forward for the
+     * rollers and downward for the blade. */
     HAL_GPIO_WritePin(DIR_GPIO_Port, DIR_Pin,
-                      (step_velocity > 0.0f) ? GPIO_PIN_RESET : GPIO_PIN_SET);
+                      (step_velocity > 0.0f) ? dir_positive
+                                             : DIR_OPPOSITE(dir_positive));
 
     Step_SetFrequency(step_freq);
 }
@@ -604,8 +618,8 @@ static bool Home_Blade(void)
     Report_State("HOMING_BLADE");
     Select_Drive_Target(DRIVE_BLADE);
 
-    /* Blade travels DOWN in the positive direction, so retracting is negative. */
-    HAL_GPIO_WritePin(DIR_GPIO_Port, DIR_Pin, GPIO_PIN_SET);
+    /* Retracting is the opposite of the blade's downward direction. */
+    HAL_GPIO_WritePin(DIR_GPIO_Port, DIR_Pin, DIR_OPPOSITE(DIR_BLADE_DOWN));
     Step_SetFrequency(STEP_FREQ_HOMING);
 
     uint32_t start_time = HAL_GetTick();
